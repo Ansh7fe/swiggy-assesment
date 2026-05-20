@@ -1,0 +1,249 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "library"
+}
+
+enum IssueType {
+  BUG
+  TASK
+  STORY
+  EPIC
+}
+
+enum IssuePriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum SprintStatus {
+  PLANNING
+  ACTIVE
+  COMPLETED
+}
+
+model User {
+  id           String        @id @default(uuid())
+  email        String        @unique
+  passwordHash String
+  displayName  String
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  createdProjects Project[]   @relation("ProjectCreator")
+  reportedIssues  Issue[]     @relation("IssueReporter")
+  assignedIssues  Issue[]     @relation("IssueAssignee")
+  comments        Comment[]
+  activityLogs    ActivityLog[]
+  watchers        Watcher[]
+  notifications   Notification[]
+
+  @@map("users")
+}
+
+model Project {
+  id           String   @id @default(uuid())
+  key          String   @unique // e.g. "PROJ"
+  name         String
+  description  String?
+  issueCounter Int      @default(0) // Safe concurrent sequence counter
+  createdById  String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  creator      User          @relation("ProjectCreator", fields: [createdById], references: [id])
+  issues       Issue[]
+  sprints      Sprint[]
+  workflows    Workflow[]
+  activityLogs ActivityLog[]
+  customFields CustomField[]
+
+  @@map("projects")
+}
+
+model Issue {
+  id           String        @id @default(uuid())
+  projectId    String
+  issueNumber  Int           // Sequential within project (e.g. 1, 2)
+  type         IssueType
+  title        String
+  description  String?
+  status       String        // e.g. "TODO", "IN_PROGRESS" (Workflow status)
+  priority     IssuePriority @default(MEDIUM)
+  assigneeId   String?
+  reporterId   String
+  sprintId     String?
+  parentId     String?
+  storyPoints  Int?
+  version      Int           @default(1) // Optimistic locking
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  reporter     User          @relation("IssueReporter", fields: [reporterId], references: [id])
+  assignee     User?         @relation("IssueAssignee", fields: [assigneeId], references: [id])
+  sprint       Sprint?       @relation(fields: [sprintId], references: [id], onDelete: SetNull)
+  parent       Issue?        @relation("SubIssues", fields: [parentId], references: [id])
+  subIssues    Issue[]       @relation("SubIssues")
+  
+  labels       IssueLabel[]
+  comments     Comment[]
+  watchers     Watcher[]
+  activityLogs ActivityLog[]
+  customValues IssueCustomFieldValue[]
+
+  @@unique([projectId, issueNumber])
+  @@index([sprintId])
+  @@index([assigneeId])
+  @@index([status])
+  @@map("issues")
+}
+
+model IssueLabel {
+  issueId String
+  label   String
+
+  issue   Issue  @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@id([issueId, label])
+  @@map("issue_labels")
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  issueId   String
+  userId    String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  issue     Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@map("comments")
+}
+
+model Sprint {
+  id        String       @id @default(uuid())
+  projectId String
+  name      String
+  goal      String?
+  status    SprintStatus @default(PLANNING)
+  startDate DateTime?
+  endDate   DateTime?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  project   Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  issues    Issue[]
+
+  @@map("sprints")
+}
+
+model Workflow {
+  id        String   @id @default(uuid())
+  projectId String   @unique
+  name      String
+  createdAt DateTime @default(now())
+
+  project     Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  statuses    WorkflowStatus[]
+  transitions WorkflowTransition[]
+
+  @@map("workflows")
+}
+
+model WorkflowStatus {
+  id         String   @id @default(uuid())
+  workflowId String
+  name       String   // e.g. "TODO", "IN_PROGRESS", "IN_REVIEW", "DONE"
+  position   Int      // Position ordering on the board
+
+  workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowId, name])
+  @@map("workflow_statuses")
+}
+
+model WorkflowTransition {
+  id         String   @id @default(uuid())
+  workflowId String
+  fromStatus String
+  toStatus   String
+
+  workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowId, fromStatus, toStatus])
+  @@map("workflow_transitions")
+}
+
+model ActivityLog {
+  id        String   @id @default(uuid())
+  projectId String
+  issueId   String?
+  actorId   String
+  action    String
+  metadata  Json
+  createdAt DateTime @default(now())
+
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  issue     Issue?   @relation(fields: [issueId], references: [id], onDelete: SetNull)
+  actor     User     @relation(fields: [actorId], references: [id])
+
+  @@map("activity_logs")
+}
+
+model Watcher {
+  issueId String
+  userId  String
+
+  issue   Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  user    User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([issueId, userId])
+  @@map("watchers")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String
+  payload   Json
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model CustomField {
+  id        String   @id @default(uuid())
+  projectId String
+  name      String
+  type      String   // "TEXT" | "DROPDOWN"
+  config    Json     // dropdown choices array e.g. ["Low", "High"]
+
+  project   Project                 @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  values    IssueCustomFieldValue[]
+
+  @@unique([projectId, name])
+  @@map("custom_fields")
+}
+
+model IssueCustomFieldValue {
+  issueId String
+  fieldId String
+  value   Json
+
+  issue   Issue       @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  field   CustomField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@id([issueId, fieldId])
+  @@map("issue_custom_field_values")
+}

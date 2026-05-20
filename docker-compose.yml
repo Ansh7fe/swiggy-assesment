@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: jira-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: jira_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - jira-network
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jira-backend
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/jira_db?schema=public
+      - JWT_SECRET=swiggy-sde-takehome-jira-secret-key
+      - JWT_EXPIRATION=24h
+    depends_on:
+      - postgres
+    networks:
+      - jira-network
+
+volumes:
+  postgres_data:
+
+networks:
+  jira-network:
+    driver: bridge
