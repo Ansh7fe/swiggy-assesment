@@ -2,6 +2,8 @@
 
 A production-oriented, modular monolith backend inspired by Jira. Built with **NestJS**, **Prisma**, **PostgreSQL**, and **Socket.IO** — designed to handle concurrent team collaboration, workflow-driven issue management, real-time board sync, and auditability at scale.
 
+Throughout this document, the term Issue refers to a generic work item/ticket within the project management system. Depending on the type, an issue can represent a Bug, Task, Story, Epic, or Sub-task.
+
 ---
 
 ## 🔗 Live Demo
