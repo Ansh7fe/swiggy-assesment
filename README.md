@@ -1,217 +1,491 @@
-# Swiggy SDE-1 Backend Engineering Assignment: Jira-Like Modular Monolith
+# Swiggy SDE-1 Backend Assignment — Jira-Like Project Management Platform
 
-A robust, enterprise-grade, and performance-oriented backend built with **NestJS**, **Prisma**, **PostgreSQL**, and **Socket.IO**. 
-
-This system acts as a production-grade backend for a Jira-like ticket tracking application. It demonstrates mature architectural decisions, strict database modeling, highly concurrency-safe state transitions, and real-time collaboration engines.
+A production-oriented, modular monolith backend inspired by Jira. Built with **NestJS**, **Prisma**, **PostgreSQL**, and **Socket.IO** — designed to handle concurrent team collaboration, workflow-driven issue management, real-time board sync, and auditability at scale.
 
 ---
 
-## 🚀 Key Architectural & Engineering Decisions
+## 🔗 Live Demo
 
-### 1. Database Concurrency Control (Optimistic Locking)
-To handle the scenario where two SDEs edit the same issue simultaneously:
-- Instead of using heavy database row locks (pessimistic locking) which block connection pools and degrade scalability, I employ **Optimistic Locking**.
-- Every `Issue` record maintains a `version` field. When a mutation is triggered, Prisma executes an update constraint matching the loaded version:
-  ```sql
-  UPDATE issues 
-  SET title = :newTitle, version = version + 1 
-  WHERE id = :issueId AND version = :currentVersion;
-  ```
-- If another process altered the issue in the interim, the condition `version = :currentVersion` fails. The count of updated rows returns `0`, causing the backend to throw a `409 Conflict` error. This prompts the client to refresh its stale copy and prevents dirty writes.
+| Resource | URL |
+|---|---|
+| **Swagger / API Docs** | [https://swiggy-assesment.onrender.com/api/docs](https://swiggy-assesment.onrender.com/api/docs) |
+| **Base API URL** | `https://swiggy-assesment.onrender.com` |
 
-### 2. Transactional Issue Counter (Safe Sequential Numbering)
-Agile boards represent issues with alphanumeric sequential keys, e.g., `PROJ-1`, `PROJ-2`.
-- Querying `MAX(issue_number)` on the issues table repeatedly causes performance degradation and race conditions under concurrent workloads.
-- I maintain a dedicated `issueCounter` integer directly inside the `Project` model.
-- Upon issue creation, I execute a single Prisma transaction that increments the project's counter and returns the incremented counter to assign to the new issue:
-  ```typescript
-  const updatedProject = await tx.project.update({
-    where: { id: projectId },
-    data: { issueCounter: { increment: 1 } },
-    select: { issueCounter: true }
-  });
-  const issueNumber = updatedProject.issueCounter;
-  ```
-- This ensures 100% sequential integrity under concurrent creations with zero table scans.
-
-### 3. State-Machine Workflow Engine & Transition Validation
-Workflows are modeled as a formal state machine inside the database:
-- Transitions must match defined pairs in the `WorkflowTransition` table (e.g. `TODO -> IN_PROGRESS`, `IN_PROGRESS -> IN_REVIEW`).
-- Attempting an invalid move (e.g., trying to jump from `TODO` straight to `DONE` when not permitted) results in a `422 Unprocessable Entity` response returning an array of valid allowed states from the current status.
-- **Automated Workflow Actions**: Moving an issue status to `IN_REVIEW` automatically sets the reporter or project lead as the assignee/reviewer if it is left blank.
-
-### 4. PostgreSQL GIN Full-Text Search with Cursor Pagination
-To support high-speed issue searches over millions of tickets:
-- I leverage PostgreSQL's native `tsvector` and `plainto_tsquery` to match text against aggregated title and description vectors dynamically.
-- This dynamic compilation ensures sub-millisecond retrieval speeds with native query planning.
-- I avoid `OFFSET` pagination (which suffers from $O(N)$ linear degradation as offset sizes grow). Instead, I enforce **Cursor Pagination** using timestamps (`createdAt < :cursor`) to maintain stable $O(\log N)$ performance regardless of dataset depth.
-
-### 5. WebSockets, Presence, & Missed Event Replay
-- **Socket.IO Room Isolation**: WebSockets are divided into namespaces and isolated rooms (`project:{projectId}`) to restrict broadcasts only to active project viewers.
-- **Lightweight Presence Tracking**: Active SDEs viewing a project are tracked in an optimized, high-performance in-memory Map, ensuring zero socket timeout overheads or external dependencies.
-- **Missed Event Replay**: Sockets that disconnect and reconnect emit a `sync_events` command sending their `lastSyncedAt` timestamp. The backend queries `ActivityLog` entries matching the project created after that time and replays missed operations to the client, solving network drop scenarios.
+> ⚠️ Hosted on Render free tier — first request may take 30–60 seconds to cold-start.
 
 ---
 
-## 🛠️ Technology Stack
+## 🛠️ Tech Stack
 
-- **Framework**: NestJS (TypeScript Monolith Modular Architecture)
-- **Database**: PostgreSQL (Relational consistency, custom GIN full-text indexes)
-- **ORM**: Prisma ORM v7 (Standard configurations and typesafe client queries via PostgreSQL driver adapter)
-- **Realtime**: Socket.IO WebSockets (Namespaces & room separation)
-- **Security**: Passport JWT Auth Guard & BCrypt password hashing
-- **Documentation**: Swagger OpenAPI interactive docs
+| Layer | Technology | Reason |
+|---|---|---|
+| Framework | NestJS (TypeScript) | Modular DI, decorators, guards, interceptors out of the box |
+| Database | PostgreSQL (Supabase) | Relational integrity, GIN full-text search, transactional safety |
+| ORM | Prisma v5 | Type-safe queries, schema-first migrations, great DX |
+| Auth | JWT + Passport + bcrypt | Stateless, scalable authentication |
+| Realtime | Socket.IO | Room-isolated WebSocket broadcasting with reconnection support |
+| Docs | Swagger / OpenAPI | Interactive API playground |
+| Deployment | Render | Zero-config CI/CD |
 
 ---
 
-## 📂 Code Organization & Directory Structure
+## 🏗️ Architecture Overview
 
-Adhering to a clean **Modular Monolith Architecture**, each feature folder contains its own self-contained domain components:
+This system is intentionally designed as a **Modular Monolith** — not microservices.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    NestJS Application                   │
+│                                                         │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────┐  │
+│  │  Auth    │  │ Projects │  │  Issues  │  │Sprints │  │
+│  └──────────┘  └──────────┘  └──────────┘  └────────┘  │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────┐  │
+│  │Workflow  │  │ Comments │  │ Activity │  │Notifs  │  │
+│  └──────────┘  └──────────┘  └──────────┘  └────────┘  │
+│  ┌──────────┐  ┌──────────┐                             │
+│  │WebSocket │  │  Search  │                             │
+│  └──────────┘  └──────────┘                             │
+│                                                         │
+│              Shared: Guards · Filters · Interceptors    │
+└─────────────────────────────────────────────────────────┘
+              │                        │
+      ┌───────▼───────┐       ┌────────▼──────┐
+      │  PostgreSQL   │       │   Socket.IO   │
+      │  (Supabase)   │       │   (Realtime)  │
+      └───────────────┘       └───────────────┘
+```
+
+**Why Modular Monolith over Microservices?**
+
+Microservices add network latency between service boundaries, distributed tracing complexity, and eventual consistency challenges that are premature for this scale. A modular monolith gives us:
+
+- Shared database transactions across domains (critical for workflow + activity + notification writes)
+- Zero inter-service network overhead
+- Simple local development — one process, one DB
+- Clean domain separation that *can* be extracted to microservices later with minimal refactoring effort
+
+---
+
+## 📂 Project Structure
 
 ```
 src/
  ├── modules/
- │    ├── auth/            # JWT authentication & User registration
- │    ├── projects/        # Project CRUD, keys, and Board API
- │    ├── issues/          # Issues CRUD, optimistic locking (versioning)
- │    ├── workflow/        # Custom Workflow validation engine & auto-actions
- │    ├── sprints/         # Sprint planning, start/complete, carry-overs, velocity
- │    ├── comments/        # Flat comments list on issues
- │    ├── activity/        # Event-driven activity logs (audit trail)
- │    ├── notifications/   # DB-only in-app notification box
- │    ├── websocket/       # Socket.IO Gateway, presence rooms, missed event replay
- │    └── fields/          # Watchers & TEXT/DROPDOWN custom issue fields
+ │    ├── auth/              # JWT registration, login, Passport strategy
+ │    ├── projects/          # Project CRUD, board API, workflow init
+ │    ├── issues/            # Issues CRUD, optimistic locking, transitions
+ │    ├── workflow/          # State machine engine, transition validation, auto-actions
+ │    ├── sprints/           # Sprint lifecycle, carry-over, velocity tracking
+ │    ├── comments/          # Flat comment threads, @mention parsing
+ │    ├── activity/          # Event-driven audit log, activity feed API
+ │    ├── notifications/     # In-app notification inbox, read/unread state
+ │    ├── websocket/         # Socket.IO gateway, presence, missed event replay
+ │    └── fields/            # Custom field definitions, watcher subscriptions
+ │
  ├── common/
- │    ├── guards/          # JwtAuthGuard (APP_GUARD - secured by default)
- │    ├── decorators/      # CurrentUser, @Public (bypass JWT)
- │    ├── filters/         # HttpExceptionFilter (maps Prisma errors, 409, 422 formats)
- ├── prisma/               # Schema configurations
- └── main.ts               # Application entrypoint & Swagger bootstrap
+ │    ├── guards/            # JwtAuthGuard (applied globally as APP_GUARD)
+ │    ├── decorators/        # @CurrentUser(), @Public() (bypass JWT)
+ │    ├── filters/           # Global exception filter — maps Prisma & domain errors
+ │    └── interceptors/      # Response transforms, logging
+ │
+ ├── prisma/                 # Prisma schema + client singleton
+ └── main.ts                 # Bootstrap, Swagger setup, Socket.IO adapter
 ```
 
 ---
 
-## 💾 Database Schema ERD (Prisma representation)
+## 💾 Database Schema
+
+### Entity Relationship Diagram
 
 ```mermaid
 erDiagram
     User ||--o{ Project : creates
     User ||--o{ Issue : reports
-    User ||--o{ Issue : assigned
+    User ||--o{ Issue : assigned_to
     User ||--o{ Comment : writes
     User ||--o{ Notification : receives
+    User ||--o{ Watcher : watches
+
     Project ||--|{ Workflow : governs
     Project ||--o{ Sprint : schedules
     Project ||--o{ Issue : contains
+    Project ||--o{ CustomField : defines
+
     Workflow ||--|{ WorkflowStatus : defines
     Workflow ||--|{ WorkflowTransition : permits
+
+    Sprint ||--o{ Issue : groups
+
     Issue ||--o{ Comment : holds
     Issue ||--o{ Watcher : has
+    Issue ||--o{ ActivityLog : logs
     Issue ||--o{ IssueCustomFieldValue : stores
+    Issue ||--o{ Issue : parent_child
+
     CustomField ||--o{ IssueCustomFieldValue : values
+    ActivityLog ||--o{ Notification : triggers
+```
+
+### Core Entities
+
+| Entity | Responsibility |
+|---|---|
+| `User` | Auth identity, assignee, reporter, watcher |
+| `Project` | Workspace with key (e.g. `PROJ`), issue counter, workflow config |
+| `Workflow` / `WorkflowStatus` / `WorkflowTransition` | Configurable state machine per project |
+| `Issue` | Core ticket — title, status, type, priority, version (optimistic lock), parent ref |
+| `Sprint` | Time-boxed iteration with velocity tracking |
+| `Comment` | Flat threaded discussion on issues |
+| `ActivityLog` | Immutable audit trail for every state mutation |
+| `Notification` | Per-user in-app inbox driven by activity events |
+| `CustomField` | Project-scoped field definitions (TEXT, DROPDOWN, NUMBER, DATE) |
+| `Watcher` | Issue subscription for change notifications |
+
+---
+
+## ⚙️ Core Engineering Decisions
+
+### 1. Optimistic Locking — Concurrent Issue Updates
+
+**Problem:** Two engineers update the same issue simultaneously — without coordination, one write silently overwrites the other (dirty write).
+
+**Solution:** Every `Issue` row carries a `version` integer. Mutations execute a conditional update:
+
+```sql
+UPDATE issues
+SET title = $1, version = version + 1
+WHERE id = $2 AND version = $3;
+```
+
+If another request already incremented `version`, the `WHERE` clause matches zero rows. The system detects this and returns `409 Conflict`, forcing the client to re-fetch and retry with fresh state.
+
+**Why not pessimistic locking?** `SELECT ... FOR UPDATE` holds a row lock for the duration of the transaction. Under 500+ concurrent users this saturates the connection pool and serializes writes — exactly the opposite of what a collaborative tool needs. Optimistic locking assumes conflicts are rare (they are) and handles them safely without blocking.
+
+---
+
+### 2. Transactional Issue Counter — Sequential Key Generation
+
+**Problem:** Generating keys like `PROJ-1`, `PROJ-2` safely under concurrent issue creation.
+
+**Naive approach:**
+```sql
+SELECT MAX(issue_number) FROM issues WHERE project_id = $1;
+-- Then insert with MAX + 1
+```
+This is a classic TOCTOU race condition — two simultaneous inserts read the same MAX and generate duplicate keys.
+
+**Solution:** Each `Project` row holds an `issueCounter` integer. Issue creation runs inside a Prisma transaction that atomically increments and reads it:
+
+```typescript
+const updated = await tx.project.update({
+  where: { id: projectId },
+  data: { issueCounter: { increment: 1 } },
+  select: { issueCounter: true, key: true },
+});
+const issueKey = `${updated.key}-${updated.issueCounter}`;
+```
+
+PostgreSQL's row-level locking on the single project row serializes only the counter increment — not the full issue write — keeping throughput high.
+
+---
+
+### 3. Workflow State Machine Engine
+
+Issues follow configurable, project-level state machines. Transitions are stored as explicit pairs in `WorkflowTransition`:
+
+```
+TODO → IN_PROGRESS → IN_REVIEW → DONE
+                 ↑___________|           (back-transition allowed)
+```
+
+**On a transition request:**
+1. Load all allowed transitions from current status
+2. If target status not in allowed set → `422 Unprocessable Entity` with allowed transitions listed
+3. If valid → apply transition, execute auto-actions, write activity log, emit WebSocket event
+
+**Auto-actions example — moving to `IN_REVIEW`:**
+If `assignee` is null, automatically assign the project lead as reviewer. This is configurable per transition.
+
+```json
+{
+  "error": "Invalid transition from TODO to DONE",
+  "allowedTransitions": ["IN_PROGRESS"]
+}
 ```
 
 ---
 
-## ⚙️ Setup & Local Installation
+### 4. Event-Driven Activity & Notification System
+
+Every issue mutation emits a domain event internally (NestJS `EventEmitter2`). Listeners handle side effects in isolation:
+
+```
+IssueService.update()
+    │
+    ├──→ ActivityListener  → writes ActivityLog row
+    ├──→ NotificationListener → writes Notification rows for watchers/assignees
+    └──→ WebSocketListener → broadcasts to project room
+```
+
+This keeps controllers and core business logic free of side-effect code. Adding a future email/push notification channel requires only a new listener — zero changes to existing code.
+
+---
+
+### 5. PostgreSQL Full-Text Search with Cursor Pagination
+
+**Full-text search** uses a GIN index over `tsvector` for sub-millisecond retrieval on millions of rows:
+
+```sql
+-- Index (run once after schema push)
+CREATE INDEX idx_issues_search ON issues
+USING GIN(to_tsvector('english', coalesce(title,'') || ' ' || coalesce(description,'')));
+
+-- Query
+SELECT * FROM issues
+WHERE to_tsvector('english', title || ' ' || description) @@ plainto_tsquery('english', $1)
+  AND project_id = $2
+  AND status = $3
+ORDER BY created_at DESC;
+```
+
+**Cursor pagination** instead of `OFFSET`:
+
+| Approach | Performance at page 1000 |
+|---|---|
+| `OFFSET 10000` | O(N) — scans and discards 10,000 rows |
+| `WHERE created_at < :cursor` | O(log N) — indexed seek, constant cost |
+
+---
+
+### 6. WebSocket Real-Time Sync
+
+**Room isolation:** Clients join `project:{projectId}` on board open, `issue:{issueId}` on issue detail open. Events are broadcast only to relevant rooms — no global fan-out.
+
+**Event types:**
+
+| Event | Trigger |
+|---|---|
+| `issue_created` | New issue added to project |
+| `issue_updated` | Any field change |
+| `issue_moved` | Sprint or status change |
+| `comment_added` | New comment posted |
+| `sprint_updated` | Sprint started or completed |
+
+**Presence tracking:** Active viewers per board are tracked in an in-memory `Map<projectId, Set<userId>>`. When a socket disconnects, the user is removed and a `presence_updated` event is emitted to remaining viewers.
+
+**Missed event replay:** On reconnect, clients send `lastSyncedAt`. The server queries `ActivityLog` for entries after that timestamp and replays them — solving the network drop scenario without requiring a message queue.
+
+---
+
+## 🔌 API Reference
+
+### Authentication
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/auth/register` | Create account |
+| POST | `/auth/login` | Authenticate, receive JWT |
+
+### Projects
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/projects` | Create project + initialize default workflow |
+| GET | `/projects` | List all accessible projects |
+| GET | `/projects/:idOrKey` | Get project details |
+| GET | `/projects/:idOrKey/board` | Kanban board — issues grouped by status |
+
+### Issues
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/projects/:projectId/issues` | Create issue (safe sequential key) |
+| GET | `/issues/:idOrKey` | Get issue by ID or key (e.g. `PROJ-42`) |
+| PATCH | `/issues/:idOrKey` | Update fields (optimistic lock enforced) |
+| POST | `/issues/:idOrKey/transitions` | Transition status via workflow engine |
+
+### Sprints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/projects/:projectId/sprints` | Create sprint in `PLANNING` state |
+| GET | `/projects/:projectId/sprints` | List all sprints |
+| POST | `/sprints/:id/start` | Activate sprint (enforces only 1 active at a time) |
+| POST | `/sprints/:id/complete` | Complete sprint — surfaces incomplete items, calculates velocity |
+
+### Comments
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/issues/:issueId/comments` | Add comment (triggers notifications + activity) |
+| GET | `/issues/:issueId/comments` | List comments, newest first |
+
+### Watchers & Custom Fields
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/issues/:issueId/watch` | Subscribe to issue updates |
+| DELETE | `/issues/:issueId/watch` | Unsubscribe |
+| POST | `/projects/:projectId/custom-fields` | Define custom field (TEXT, DROPDOWN, NUMBER, DATE) |
+| POST | `/issues/:issueId/custom-fields` | Set custom field value on issue |
+
+### Search & Activity
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/search?q=...&status=...&assignee=...` | Full-text + structured search, cursor paginated |
+| GET | `/projects/:projectId/activity` | Paginated project activity feed |
+
+### Notifications
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/notifications` | Fetch in-app inbox |
+| PATCH | `/notifications/:id/read` | Mark one as read |
+| PATCH | `/notifications/read` | Mark all as read |
+
+---
+
+## 🔄 Key Scenarios
+
+### Scenario 1: Concurrent Issue Updates
+
+1. User A fetches issue at `version: 5`, changes assignee
+2. User B fetches same issue at `version: 5`, changes priority
+3. User A's PATCH fires first → `version` becomes `6`
+4. User B's PATCH arrives → `WHERE version = 5` matches 0 rows → `409 Conflict`
+5. User B's client re-fetches (`version: 6`), retries with priority change → succeeds, `version` becomes `7`
+6. Both changes applied. Both users receive WebSocket events with final state.
+
+### Scenario 2: Sprint Completion with Carry-Over
+
+```http
+POST /sprints/:id/complete
+{
+  "carryOverIssueIds": ["issue-uuid-1", "issue-uuid-3"]
+}
+```
+
+- Incomplete issues are surfaced in the response
+- Selected issues are moved to the next sprint (or backlog)
+- Velocity = sum of `storyPoints` on issues with `status.category = DONE`
+- Activity log records the sprint completion event
+
+### Scenario 3: Workflow Violation
+
+```http
+POST /issues/PROJ-42/transitions
+{ "toStatusId": "done-status-uuid" }
+
+→ 422 Unprocessable Entity
+{
+  "message": "Invalid transition from TODO to DONE",
+  "allowedTransitions": [
+    { "id": "...", "name": "IN_PROGRESS" }
+  ]
+}
+```
+
+---
+
+## ⚡ Local Setup
 
 ### Prerequisites
-- Node.js v20.x
-- PostgreSQL instance (local or hosted, e.g., Neon/Supabase)
-- *Optional*: Docker & Docker Compose (if installing dependencies via container)
 
-### Step 1: Clone and install packages
+- Node.js v20+
+- PostgreSQL (local or [Supabase](https://supabase.com) free tier)
+- npm
+
+### 1. Clone & Install
+
 ```bash
+git clone <repository-url>
+cd swiggy-assessment
 npm install
 ```
 
-### Step 2: Configure Environment Variables
-Create a `.env` file in the root directory (or copy `.env.example`) and replace the placeholders with your own values:
+### 2. Environment Variables
+
 ```env
 PORT=3000
-DATABASE_URL="postgresql://postgres:your_password@localhost:5432/postgres" # use your own DB host/user/password
-JWT_SECRET="replace-with-a-strong-secret" # keep this secret safe
-JWT_EXPIRATION="24h"
-PRISMA_CLIENT_ENGINE_TYPE="library"
+DATABASE_URL=postgresql://postgres:password@localhost:5432/postgres
+JWT_SECRET=your-strong-secret-here
+JWT_EXPIRATION=24h
 ```
 
-### Step 3: Run Database Sync
-Initialize the schema and tables in the target database:
+### 3. Database Setup
+
 ```bash
+# Push schema to database
 npx prisma db push
+
+# Generate Prisma client
+npx prisma generate
+
+# Create GIN full-text search index (run once in your DB)
+psql $DATABASE_URL -c "
+  CREATE INDEX IF NOT EXISTS idx_issues_search
+  ON issues
+  USING GIN(to_tsvector('english', coalesce(title,'') || ' ' || coalesce(description,'')));
+"
 ```
 
-### Step 4: GIN Search Index Creation SQL
-To build the Generalized Inverted Index (GIN) on the issue text search vectors in PostgreSQL for maximum lookup speeds, run the following SQL command on your target database:
-```sql
-CREATE INDEX idx_issues_search ON issues USING GIN(to_tsvector('english', coalesce(title, '') || ' ' || coalesce(description, '')));
-```
+### 4. Start Server
 
-### Step 5: Start the Server
 ```bash
-# Run in development mode
+# Development (hot reload)
 npm run start:dev
 
-# Run in production mode
-npm run build
-npm run start:prod
+# Production
+npm run build && npm run start:prod
 ```
 
-### Step 6: Docker Container Launch (Optional)
-If Docker is installed in your target server:
+### 5. Docker (optional)
+
 ```bash
 docker-compose up --build
 ```
-This launches a PostgreSQL image and the NestJS application container, binding port `3000`.
+
+Launches PostgreSQL + NestJS application. API available at `http://localhost:3000`.
 
 ---
 
-## 📖 API Walkthrough & Swagger Docs
+## 📊 Engineering Tradeoffs
 
-Once the application starts, navigate to the interactive OpenAPI playground:
-👉 **[http://localhost:3000/api/docs](http://localhost:3000/api/docs)**
-
-### Complete API Endpoint Index
-
-| Module | Method | Route | Description |
-| :--- | :--- | :--- | :--- |
-| **Auth** | POST | `/auth/register` | Create a user account |
-| **Auth** | POST | `/auth/login` | Authenticate and obtain JWT token |
-| **Projects** | POST | `/projects` | Initialize a project and default workflow |
-| **Projects** | GET | `/projects` | List all projects |
-| **Projects** | GET | `/projects/:idOrKey` | Retrieve single project details |
-| **Projects** | GET | `/projects/:idOrKey/board` | Get board statuses and issues grouped for Kanban |
-| **Issues** | POST | `/projects/:projectId/issues` | Create an issue (safely serialized numbering) |
-| **Issues** | GET | `/issues/:idOrKey` | Retrieve single issue details by ID or Key |
-| **Issues** | PATCH | `/issues/:idOrKey` | Update issue (concurrency & transition validation) |
-| **Issues** | POST | `/issues/:idOrKey/transitions` | Explicit status state machine changes |
-| **Sprints** | POST | `/projects/:projectId/sprints` | Create a new sprint in PLANNING stage |
-| **Sprints** | GET | `/projects/:projectId/sprints` | List all sprints for a project |
-| **Sprints** | POST | `/sprints/:id/start` | Activate a planning sprint (asserts only 1 active allowed) |
-| **Sprints** | POST | `/sprints/:id/complete` | Complete active sprint, compute velocity & carry-overs |
-| **Comments** | POST | `/issues/:issueId/comments` | Add flat comment to issue (triggers event notifications) |
-| **Comments** | GET | `/issues/:issueId/comments` | List issue comments, sorted newest first |
-| **Fields & Watchers** | POST | `/projects/:projectId/custom-fields` | Define custom fields (TEXT/DROPDOWN) for project |
-| **Fields & Watchers** | POST | `/issues/:issueId/custom-fields` | Set custom field values on specific ticket |
-| **Fields & Watchers** | POST | `/issues/:issueId/watch` | Subscribe to watch ticket updates |
-| **Fields & Watchers** | DELETE | `/issues/:issueId/watch` | Unwatch ticket updates |
-| **Search** | GET | `/search` | Full-Text Search (GIN-driven) + cursor pagination |
-| **Activity** | GET | `/projects/:projectId/activity` | Get project activity log history with cursor pagination |
-| **Notifications** | GET | `/notifications` | Fetch user in-app notification inbox |
-| **Notifications** | PATCH | `/notifications/read` | Mark all notifications as read |
-| **Notifications** | PATCH | `/notifications/:id/read` | Mark specific notification as read |
+| Decision | Choice Made | Alternative Considered | Reason |
+|---|---|---|---|
+| Architecture | Modular Monolith | Microservices | Simpler transactions, faster iteration, no distributed complexity at this scale |
+| Concurrency control | Optimistic locking (`version`) | Pessimistic (`SELECT FOR UPDATE`) | Pessimistic locks block connection pool under high concurrency; optimistic scales better |
+| Search | PostgreSQL GIN + tsvector | Elasticsearch | Avoided extra infrastructure; Postgres FTS is sufficient for assignment scope, same DB transaction boundary |
+| Pagination | Cursor-based (`createdAt < :cursor`) | OFFSET | OFFSET degrades O(N) at depth; cursor is O(log N) with an index |
+| Comments | Flat list | Nested/threaded tree | Recursive queries and WebSocket sync for nested trees add significant complexity with marginal UX gain |
+| Notifications | DB-only (relational table) | Redis pub/sub + BullMQ | Eliminated external infrastructure; NestJS EventEmitter keeps side effects decoupled — plugging in a queue later requires only a new listener |
+| WebSocket presence | In-memory Map | Redis-backed shared state | Single-node deployment makes in-memory sufficient; Redis adapter is the documented upgrade path for horizontal scaling |
 
 ---
 
-## 📈 Engineering Tradeoffs Made
+## 🚀 Future Improvements
 
-1. **Monolith vs. Microservices**:
-   - *Choice*: I built a **Modular Monolith**.
-   - *Tradeoff*: A monolith is far faster to deploy, has no network latency between service boundaries, sharing transaction contexts is trivial, and is much simpler to verify. By keeping domains strictly separated into clean self-contained NestJS modules, this codebase can be split into individual microservices in the future with minimal refactoring.
-2. **Optimistic vs. Pessimistic Locking**:
-   - *Choice*: **Optimistic locking** using a `version` count.
-   - *Tradeoff*: Pessimistic locking (blocking DB rows) degrades performance dramatically as user count increases. Optimistic locking maintains maximum throughput by assuming conflicts are rare but handles them safely, mapping conflict exceptions to standard HTTP `409` payloads.
-3. **Database-Only Notifications**:
-   - *Choice*: Standard relational tables.
-   - *Tradeoff*: I avoided setting up email queues (RabbitMQ/BullMQ) or push notification servers to minimize infrastructure overhead. Since DB notifications are fully decoupled using NestJS events, connecting an external push gateway later requires editing only a single event listener without modifying core controllers.
-# swiggy-assesment
+If this were a production system at scale, the next engineering investments would be:
+
+- **Redis adapter for Socket.IO** — enables horizontal scaling of WebSocket servers across multiple nodes
+- **BullMQ for async notifications** — decouple notification delivery from the request path; enables email/push/Slack integrations
+- **Role-based access control (RBAC)** — project-level permissions (Admin, Member, Viewer)
+- **Elasticsearch integration** — for cross-project search, faceted filters, and analytics at 10M+ issue scale
+- **PgBouncer connection pooling** — manage connection limits under 500+ concurrent users hitting PostgreSQL
+- **File attachment support** — S3-backed uploads linked to issues
+- **Webhook system** — let external tools subscribe to project events
+- **Multi-workspace / organisation support**
+
+---
+
+## 📝 Final Notes
+
+This project prioritizes:
+
+- **Correctness under concurrency** — optimistic locking, transactional counters, atomic transitions
+- **Clean architecture** — domain isolation, event-driven side effects, no business logic in controllers
+- **Production-grade patterns** — cursor pagination, GIN indexing, WebSocket room isolation, missed event replay
+- **Justified tradeoffs** — every non-obvious decision is documented with the reasoning and the acknowledged limitations
