@@ -10,7 +10,7 @@ This system acts as a production-grade backend for a Jira-like ticket tracking a
 
 ### 1. Database Concurrency Control (Optimistic Locking)
 To handle the scenario where two SDEs edit the same issue simultaneously:
-- Instead of using heavy database row locks (pessimistic locking) which block connection pools and degrade scalability, we employ **Optimistic Locking**.
+- Instead of using heavy database row locks (pessimistic locking) which block connection pools and degrade scalability, I employ **Optimistic Locking**.
 - Every `Issue` record maintains a `version` field. When a mutation is triggered, Prisma executes an update constraint matching the loaded version:
   ```sql
   UPDATE issues 
@@ -22,8 +22,8 @@ To handle the scenario where two SDEs edit the same issue simultaneously:
 ### 2. Transactional Issue Counter (Safe Sequential Numbering)
 Agile boards represent issues with alphanumeric sequential keys, e.g., `PROJ-1`, `PROJ-2`.
 - Querying `MAX(issue_number)` on the issues table repeatedly causes performance degradation and race conditions under concurrent workloads.
-- We maintain a dedicated `issueCounter` integer directly inside the `Project` model.
-- Upon issue creation, we execute a single Prisma transaction that increments the project's counter and returns the incremented counter to assign to the new issue:
+- I maintain a dedicated `issueCounter` integer directly inside the `Project` model.
+- Upon issue creation, I execute a single Prisma transaction that increments the project's counter and returns the incremented counter to assign to the new issue:
   ```typescript
   const updatedProject = await tx.project.update({
     where: { id: projectId },
@@ -42,9 +42,9 @@ Workflows are modeled as a formal state machine inside the database:
 
 ### 4. PostgreSQL GIN Full-Text Search with Cursor Pagination
 To support high-speed issue searches over millions of tickets:
-- We leverage PostgreSQL's native `tsvector` and `plainto_tsquery` to match text against aggregated title and description vectors dynamically.
+- I leverage PostgreSQL's native `tsvector` and `plainto_tsquery` to match text against aggregated title and description vectors dynamically.
 - This dynamic compilation ensures sub-millisecond retrieval speeds with native query planning.
-- We avoid `OFFSET` pagination (which suffers from $O(N)$ linear degradation as offset sizes grow). Instead, we enforce **Cursor Pagination** using timestamps (`createdAt < :cursor`) to maintain stable $O(\log N)$ performance regardless of dataset depth.
+- I avoid `OFFSET` pagination (which suffers from $O(N)$ linear degradation as offset sizes grow). Instead, I enforce **Cursor Pagination** using timestamps (`createdAt < :cursor`) to maintain stable $O(\log N)$ performance regardless of dataset depth.
 
 ### 5. WebSockets, Presence, & Missed Event Replay
 - **Socket.IO Room Isolation**: WebSockets are divided into namespaces and isolated rooms (`project:{projectId}`) to restrict broadcasts only to active project viewers.
@@ -126,11 +126,11 @@ npm install
 ```
 
 ### Step 2: Configure Environment Variables
-Create a `.env` file in the root directory (based on the default setup):
+Create a `.env` file in the root directory (or copy `.env.example`) and replace the placeholders with your own values:
 ```env
 PORT=3000
-DATABASE_URL="postgresql://postgres:Swiggy@2026@db.bfocuemhpdzogsnukgcg.supabase.co:5432/postgres"
-JWT_SECRET="swiggy-sde-takehome-jira-secret-key"
+DATABASE_URL="postgresql://postgres:your_password@localhost:5432/postgres" # use your own DB host/user/password
+JWT_SECRET="replace-with-a-strong-secret" # keep this secret safe
 JWT_EXPIRATION="24h"
 PRISMA_CLIENT_ENGINE_TYPE="library"
 ```
@@ -206,12 +206,12 @@ Once the application starts, navigate to the interactive OpenAPI playground:
 ## 📈 Engineering Tradeoffs Made
 
 1. **Monolith vs. Microservices**:
-   - *Choice*: We built a **Modular Monolith**.
+   - *Choice*: I built a **Modular Monolith**.
    - *Tradeoff*: A monolith is far faster to deploy, has no network latency between service boundaries, sharing transaction contexts is trivial, and is much simpler to verify. By keeping domains strictly separated into clean self-contained NestJS modules, this codebase can be split into individual microservices in the future with minimal refactoring.
 2. **Optimistic vs. Pessimistic Locking**:
    - *Choice*: **Optimistic locking** using a `version` count.
    - *Tradeoff*: Pessimistic locking (blocking DB rows) degrades performance dramatically as user count increases. Optimistic locking maintains maximum throughput by assuming conflicts are rare but handles them safely, mapping conflict exceptions to standard HTTP `409` payloads.
 3. **Database-Only Notifications**:
    - *Choice*: Standard relational tables.
-   - *Tradeoff*: We avoided setting up email queues (RabbitMQ/BullMQ) or push notification servers to minimize infrastructure overhead. Since DB notifications are fully decoupled using NestJS events, connecting an external push gateway later requires editing only a single event listener without modifying core controllers.
+   - *Tradeoff*: I avoided setting up email queues (RabbitMQ/BullMQ) or push notification servers to minimize infrastructure overhead. Since DB notifications are fully decoupled using NestJS events, connecting an external push gateway later requires editing only a single event listener without modifying core controllers.
 # swiggy-assesment
