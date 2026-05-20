@@ -10,9 +10,6 @@ export class CommentsService {
     private eventEmitter: EventEmitter2,
   ) {}
 
-  /**
-   * Create a flat comment on a specific issue and trigger decoupling event.
-   */
   async create(issueId: string, dto: CreateCommentDto, userId: string) {
     const issue = await this.prisma.issue.findUnique({
       where: { id: issueId },
@@ -39,7 +36,6 @@ export class CommentsService {
       },
     });
 
-    // Trigger comment added event
     this.eventEmitter.emit('comment.added', {
       comment,
       issue,
@@ -49,9 +45,6 @@ export class CommentsService {
     return comment;
   }
 
-  /**
-   * Fetch all comments for an issue, sorted newest first.
-   */
   async findIssueComments(issueId: string) {
     const issue = await this.prisma.issue.findUnique({
       where: { id: issueId },

@@ -11,48 +11,83 @@ import {
 import { IssueType, IssuePriority } from '@prisma/client';
 
 export class CreateIssueDto {
-  @ApiProperty({ enum: IssueType, example: 'TASK', description: 'Issue type classification' })
+  @ApiProperty({
+    enum: IssueType,
+    example: 'TASK',
+    description: 'Issue type classification',
+  })
   @IsEnum(IssueType)
   @IsNotEmpty()
   type!: IssueType;
 
-  @ApiProperty({ example: 'Implement auth gateway', description: 'Issue title' })
+  @ApiProperty({
+    example: 'Implement auth gateway',
+    description: 'Issue title',
+  })
   @IsString()
   @IsNotEmpty()
   title!: string;
 
-  @ApiProperty({ example: 'Implement passport jwt strategy', description: 'Detailed description', required: false })
+  @ApiProperty({
+    example: 'Implement passport jwt strategy',
+    description: 'Detailed description',
+    required: false,
+  })
   @IsString()
   @IsOptional()
   description?: string;
 
-  @ApiProperty({ enum: IssuePriority, example: 'MEDIUM', description: 'Issue priority scale' })
+  @ApiProperty({
+    enum: IssuePriority,
+    example: 'MEDIUM',
+    description: 'Issue priority scale',
+  })
   @IsEnum(IssuePriority)
   @IsOptional()
   priority?: IssuePriority;
 
-  @ApiProperty({ example: 'uuid-user-id', description: 'Assignee user ID', required: false })
+  @ApiProperty({
+    example: 'uuid-user-id',
+    description: 'Assignee user ID',
+    required: false,
+  })
   @IsString()
   @IsOptional()
   assigneeId?: string;
 
-  @ApiProperty({ example: 'uuid-sprint-id', description: 'Sprint ID', required: false })
+  @ApiProperty({
+    example: 'uuid-sprint-id',
+    description: 'Sprint ID',
+    required: false,
+  })
   @IsString()
   @IsOptional()
   sprintId?: string;
 
-  @ApiProperty({ example: 5, description: 'Story points estimate', required: false })
+  @ApiProperty({
+    example: 5,
+    description: 'Story points estimate',
+    required: false,
+  })
   @IsInt()
   @Min(0)
   @IsOptional()
   storyPoints?: number;
 
-  @ApiProperty({ example: 'uuid-parent-issue-id', description: 'Parent issue ID (for sub-tasks)', required: false })
+  @ApiProperty({
+    example: 'uuid-parent-issue-id',
+    description: 'Parent issue ID (for sub-tasks)',
+    required: false,
+  })
   @IsString()
   @IsOptional()
   parentId?: string;
 
-  @ApiProperty({ example: ['backend', 'security'], description: 'List of tags/labels', required: false })
+  @ApiProperty({
+    example: ['backend', 'security'],
+    description: 'List of tags/labels',
+    required: false,
+  })
   @IsArray()
   @IsString({ each: true })
   @IsOptional()
@@ -101,7 +136,11 @@ export class UpdateIssueDto {
   @IsOptional()
   status?: string;
 
-  @ApiProperty({ example: 1, description: 'Current issue version (mandatory for optimistic lock validation)' })
+  @ApiProperty({
+    example: 1,
+    description:
+      'Current issue version (mandatory for optimistic lock validation)',
+  })
   @IsInt()
   @Min(1)
   @IsNotEmpty()
@@ -115,12 +154,19 @@ export class UpdateIssueDto {
 }
 
 export class TransitionIssueDto {
-  @ApiProperty({ example: 'IN_PROGRESS', description: 'Target workflow status name' })
+  @ApiProperty({
+    example: 'IN_PROGRESS',
+    description: 'Target workflow status name',
+  })
   @IsString()
   @IsNotEmpty()
   status!: string;
 
-  @ApiProperty({ example: 1, description: 'Current issue version (mandatory for optimistic lock validation)' })
+  @ApiProperty({
+    example: 1,
+    description:
+      'Current issue version (mandatory for optimistic lock validation)',
+  })
   @IsInt()
   @Min(1)
   @IsNotEmpty()

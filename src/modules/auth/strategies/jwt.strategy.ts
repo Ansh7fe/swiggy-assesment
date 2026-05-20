@@ -14,7 +14,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: process.env['JWT_SECRET'] || 'swiggy-sde-takehome-jira-secret-key',
+      secretOrKey:
+        process.env['JWT_SECRET'] || 'swiggy-sde-takehome-jira-secret-key',
     });
   }
 
@@ -30,7 +31,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
 
     if (!user) {
-      throw new UnauthorizedException('User no longer exists or session has expired.');
+      throw new UnauthorizedException(
+        'User no longer exists or session has expired.',
+      );
     }
 
     return user;

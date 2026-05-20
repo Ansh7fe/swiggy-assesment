@@ -1,4 +1,8 @@
-import { Injectable, ConflictException, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RegisterDto, LoginDto } from './dto/auth.dto';
@@ -54,7 +58,7 @@ export class AuthService {
     }
 
     const payload = { sub: user.id, email: user.email };
-    
+
     return {
       accessToken: this.jwtService.sign(payload),
       user: {

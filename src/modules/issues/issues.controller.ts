@@ -1,7 +1,16 @@
 import { Controller, Post, Get, Patch, Body, Param } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { IssuesService } from './issues.service';
-import { CreateIssueDto, UpdateIssueDto, TransitionIssueDto } from './dto/issue.dto';
+import {
+  CreateIssueDto,
+  UpdateIssueDto,
+  TransitionIssueDto,
+} from './dto/issue.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('Issues')
@@ -31,9 +40,14 @@ export class IssuesController {
   }
 
   @Patch('issues/:idOrKey')
-  @ApiOperation({ summary: 'Update an issue (supports optimistic locking via version field)' })
+  @ApiOperation({
+    summary: 'Update an issue (supports optimistic locking via version field)',
+  })
   @ApiResponse({ status: 200, description: 'Issue updated.' })
-  @ApiResponse({ status: 409, description: 'Optimistic locking concurrency conflict.' })
+  @ApiResponse({
+    status: 409,
+    description: 'Optimistic locking concurrency conflict.',
+  })
   @ApiResponse({ status: 422, description: 'Workflow validation failed.' })
   update(
     @Param('idOrKey') idOrKey: string,
@@ -44,9 +58,15 @@ export class IssuesController {
   }
 
   @Post('issues/:idOrKey/transitions')
-  @ApiOperation({ summary: 'Transition an issue status (validates state machine, supports optimistic locking)' })
+  @ApiOperation({
+    summary:
+      'Transition an issue status (validates state machine, supports optimistic locking)',
+  })
   @ApiResponse({ status: 200, description: 'Issue status updated.' })
-  @ApiResponse({ status: 409, description: 'Optimistic locking concurrency conflict.' })
+  @ApiResponse({
+    status: 409,
+    description: 'Optimistic locking concurrency conflict.',
+  })
   @ApiResponse({ status: 422, description: 'Workflow transition not allowed.' })
   transition(
     @Param('idOrKey') idOrKey: string,

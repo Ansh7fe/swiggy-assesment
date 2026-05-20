@@ -19,13 +19,8 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 
 @Module({
   imports: [
-    // Register Nest Event Emitter globally
     EventEmitterModule.forRoot(),
-    
-    // Core database service module
     PrismaModule,
-    
-    // Feature Modules
     AuthModule,
     ProjectsModule,
     IssuesModule,
@@ -41,7 +36,6 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
   controllers: [AppController],
   providers: [
     AppService,
-    // Bind JWT Auth Guard globally to secure all endpoints by default
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,

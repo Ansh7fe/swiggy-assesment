@@ -9,7 +9,8 @@ import { JwtStrategy } from './strategies/jwt.strategy';
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.register({
-      secret: process.env['JWT_SECRET'] || 'swiggy-sde-takehome-jira-secret-key',
+      secret:
+        process.env['JWT_SECRET'] || 'swiggy-sde-takehome-jira-secret-key',
       signOptions: {
         expiresIn: (process.env['JWT_EXPIRATION'] || '24h') as any,
       },

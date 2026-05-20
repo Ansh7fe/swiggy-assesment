@@ -1,4 +1,8 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateProjectDto } from './dto/project.dto';
 
@@ -7,19 +11,18 @@ export class ProjectsService {
   constructor(private prisma: PrismaService) {}
 
   async create(dto: CreateProjectDto, userId: string) {
-    // Upper case the key
     const projectKey = dto.key.toUpperCase();
 
-    // Check if key already exists
     const existing = await this.prisma.project.findUnique({
       where: { key: projectKey },
     });
 
     if (existing) {
-      throw new ConflictException(`Project key "${projectKey}" is already taken.`);
+      throw new ConflictException(
+        `Project key "${projectKey}" is already taken.`,
+      );
     }
 
-    // Set up project and its default workflow inside a transaction
     return this.prisma.$transaction(async (tx) => {
       const project = await tx.project.create({
         data: {
@@ -30,7 +33,6 @@ export class ProjectsService {
         },
       });
 
-      // Initialize default Workflow for this project
       const workflow = await tx.workflow.create({
         data: {
           projectId: project.id,
@@ -38,7 +40,6 @@ export class ProjectsService {
         },
       });
 
-      // Default Workflow Statuses
       const statuses = ['TODO', 'IN_PROGRESS', 'IN_REVIEW', 'DONE'];
       await Promise.all(
         statuses.map((status, index) =>
@@ -52,15 +53,14 @@ export class ProjectsService {
         ),
       );
 
-      // Default Allowed Transitions
       const transitions = [
         { from: 'TODO', to: 'IN_PROGRESS' },
         { from: 'TODO', to: 'DONE' },
         { from: 'IN_PROGRESS', to: 'IN_REVIEW' },
         { from: 'IN_PROGRESS', to: 'TODO' },
         { from: 'IN_REVIEW', to: 'DONE' },
-        { from: 'IN_REVIEW', to: 'IN_PROGRESS' }, // rejection
-        { from: 'DONE', to: 'IN_PROGRESS' }, // reopen
+        { from: 'IN_REVIEW', to: 'IN_PROGRESS' },
+        { from: 'DONE', to: 'IN_PROGRESS' },
       ];
 
       await Promise.all(
@@ -117,13 +117,14 @@ export class ProjectsService {
     });
 
     if (!project) {
-      throw new NotFoundException(`Project with key or ID "${idOrKey}" was not found.`);
+      throw new NotFoundException(
+        `Project with key or ID "${idOrKey}" was not found.`,
+      );
     }
 
     return project;
   }
 
-  // Safe concurrent increment for issue sequence numbering
   async incrementIssueCounter(projectId: string): Promise<number> {
     const project = await this.prisma.project.update({
       where: { id: projectId },
@@ -133,9 +134,6 @@ export class ProjectsService {
     return project.issueCounter;
   }
 
-  /**
-   * Fetches issues grouped by workflow columns.
-   */
   async getBoard(idOrKey: string) {
     const project = await this.findOne(idOrKey);
 

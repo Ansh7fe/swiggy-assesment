@@ -8,16 +8,21 @@ export class NotificationsService {
 
   constructor(private prisma: PrismaService) {}
 
-  /**
-   * Listen to issue update event and notify users accordingly.
-   */
   @OnEvent('issue.updated')
-  async handleIssueUpdatedNotification(payload: { issue: any; oldValue: any; newValue: any; actorId: string }) {
+  async handleIssueUpdatedNotification(payload: {
+    issue: any;
+    oldValue: any;
+    newValue: any;
+    actorId: string;
+  }) {
     try {
       const { issue, oldValue, newValue, actorId } = payload;
 
-      // 1. Notify new assignee if assignment changed
-      if (newValue.assigneeId && oldValue.assigneeId !== newValue.assigneeId && newValue.assigneeId !== actorId) {
+      if (
+        newValue.assigneeId &&
+        oldValue.assigneeId !== newValue.assigneeId &&
+        newValue.assigneeId !== actorId
+      ) {
         await this.prisma.notification.create({
           data: {
             userId: newValue.assigneeId,
@@ -30,15 +35,16 @@ export class NotificationsService {
             },
           },
         });
-        this.logger.log(`Created assignment notification for user ${newValue.assigneeId}`);
+        this.logger.log(
+          `Created assignment notification for user ${newValue.assigneeId}`,
+        );
       }
 
-      // 2. Notify watchers if status changed
       if (oldValue.status !== newValue.status) {
         const watchers = await this.prisma.watcher.findMany({
           where: {
             issueId: issue.id,
-            userId: { not: actorId }, // Don't notify the actor who made the change
+            userId: { not: actorId },
           },
         });
 
@@ -61,27 +67,31 @@ export class NotificationsService {
               }),
             ),
           );
-          this.logger.log(`Created status change notifications for ${watchers.length} watchers.`);
+          this.logger.log(
+            `Created status change notifications for ${watchers.length} watchers.`,
+          );
         }
       }
     } catch (err: any) {
-      this.logger.error(`Failed to generate notifications for issue update: ${err.message}`);
+      this.logger.error(
+        `Failed to generate notifications for issue update: ${err.message}`,
+      );
     }
   }
 
-  /**
-   * Listen to comment creation and notify assignee, reporter, and watchers.
-   */
   @OnEvent('comment.added')
-  async handleCommentAddedNotification(payload: { comment: any; issue: any; actorId: string }) {
+  async handleCommentAddedNotification(payload: {
+    comment: any;
+    issue: any;
+    actorId: string;
+  }) {
     try {
       const { comment, issue, actorId } = payload;
 
-      // Find all watchers of this issue
       const watchers = await this.prisma.watcher.findMany({
         where: {
           issueId: issue.id,
-          userId: { not: actorId }, // Don't notify commenter themselves
+          userId: { not: actorId },
         },
       });
 
@@ -102,16 +112,17 @@ export class NotificationsService {
             }),
           ),
         );
-        this.logger.log(`Created comment notifications for ${watchers.length} watchers.`);
+        this.logger.log(
+          `Created comment notifications for ${watchers.length} watchers.`,
+        );
       }
     } catch (err: any) {
-      this.logger.error(`Failed to generate notifications for comment addition: ${err.message}`);
+      this.logger.error(
+        `Failed to generate notifications for comment addition: ${err.message}`,
+      );
     }
   }
 
-  /**
-   * Retrieve active notifications for a user, sorted newest first.
-   */
   async getUserNotifications(userId: string, isRead?: boolean) {
     return this.prisma.notification.findMany({
       where: {
@@ -122,20 +133,21 @@ export class NotificationsService {
     });
   }
 
-  /**
-   * Mark a specific notification as read.
-   */
   async markAsRead(notificationId: string, userId: string) {
     const notification = await this.prisma.notification.findUnique({
       where: { id: notificationId },
     });
 
     if (!notification) {
-      throw new NotFoundException(`Notification "${notificationId}" was not found.`);
+      throw new NotFoundException(
+        `Notification "${notificationId}" was not found.`,
+      );
     }
 
     if (notification.userId !== userId) {
-      throw new NotFoundException('You do not have permission to modify this notification.');
+      throw new NotFoundException(
+        'You do not have permission to modify this notification.',
+      );
     }
 
     return this.prisma.notification.update({
@@ -144,9 +156,6 @@ export class NotificationsService {
     });
   }
 
-  /**
-   * Mark all notifications as read for a user.
-   */
   async markAllAsRead(userId: string) {
     return this.prisma.notification.updateMany({
       where: { userId, isRead: false },

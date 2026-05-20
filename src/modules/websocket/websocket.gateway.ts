@@ -17,14 +17,15 @@ import { Logger } from '@nestjs/common';
     origin: '*',
   },
 })
-export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class WebsocketGateway
+  implements OnGatewayConnection, OnGatewayDisconnect
+{
   @WebSocketServer()
   server!: Server;
 
   private readonly logger = new Logger(WebsocketGateway.name);
 
-  // In-Memory Presence Tracking: ProjectID -> Set of UserDisplayNames or UserIDs
-  private presenceMap = new Map<string, Map<string, string>>(); // projectId -> Map<socketId, displayName>
+  private presenceMap = new Map<string, Map<string, string>>();
 
   constructor(private prisma: PrismaService) {}
 
@@ -34,8 +35,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
 
   handleDisconnect(client: Socket) {
     this.logger.log(`Socket Client Disconnected: ${client.id}`);
-    
-    // Clean up presence across all projects
+
     for (const [projectId, users] of this.presenceMap.entries()) {
       if (users.has(client.id)) {
         users.delete(client.id);
@@ -44,9 +44,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
     }
   }
 
-  /**
-   * Client joins a project room for real-time updates and presence tracking
-   */
   @SubscribeMessage('join_project')
   async handleJoinProject(
     @ConnectedSocket() client: Socket,
@@ -56,22 +53,21 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
     if (!projectId) return;
 
     client.join(`project:${projectId}`);
-    this.logger.log(`Client ${client.id} joined project room: project:${projectId}`);
+    this.logger.log(
+      `Client ${client.id} joined project room: project:${projectId}`,
+    );
 
-    // Update presence map
     if (!this.presenceMap.has(projectId)) {
       this.presenceMap.set(projectId, new Map());
     }
-    
-    this.presenceMap.get(projectId)!.set(client.id, userDisplayName || `User-${client.id.substring(0, 4)}`);
-    
-    // Broadcast updated presence to the project
+
+    this.presenceMap
+      .get(projectId)!
+      .set(client.id, userDisplayName || `User-${client.id.substring(0, 4)}`);
+
     this.broadcastPresence(projectId);
   }
 
-  /**
-   * Client explicitly leaves a project (e.g. closing the project view)
-   */
   @SubscribeMessage('leave_project')
   handleLeaveProject(
     @ConnectedSocket() client: Socket,
@@ -81,7 +77,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
     if (!projectId) return;
 
     client.leave(`project:${projectId}`);
-    
+
     const users = this.presenceMap.get(projectId);
     if (users && users.has(client.id)) {
       users.delete(client.id);
@@ -89,10 +85,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
     }
   }
 
-  /**
-   * Missed Event Replay Sync.
-   * Client sends a timestamp they last synced. We fetch activity logs and replay them.
-   */
   @SubscribeMessage('sync_events')
   async handleSyncEvents(
     @ConnectedSocket() client: Socket,
@@ -103,12 +95,13 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
 
     const parsedDate = new Date(lastSyncedAt);
     if (isNaN(parsedDate.getTime())) {
-      client.emit('sync_error', { message: 'Invalid ISO date string provided for sync.' });
+      client.emit('sync_error', {
+        message: 'Invalid ISO date string provided for sync.',
+      });
       return;
     }
 
     try {
-      // Fetch missed activity logs
       const missedEvents = await this.prisma.activityLog.findMany({
         where: {
           projectId,
@@ -121,7 +114,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         orderBy: { createdAt: 'asc' },
       });
 
-      // Send logs back to reconnecting client
       client.emit('events_replayed', {
         lastSyncedAt,
         events: missedEvents.map((event) => ({
@@ -135,13 +127,13 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         })),
       });
 
-      this.logger.log(`Replayed ${missedEvents.length} events to client ${client.id}`);
+      this.logger.log(
+        `Replayed ${missedEvents.length} events to client ${client.id}`,
+      );
     } catch (err: any) {
       this.logger.error(`Error in event replay sync: ${err.message}`);
     }
   }
-
-  // --- External Decoupled Event Listeners to Broadcast Realtime Updates ---
 
   @OnEvent('issue.created')
   handleIssueCreatedBroadcast(payload: { issue: any; actorId: string }) {
@@ -158,7 +150,11 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
   }
 
   @OnEvent('issue.updated')
-  handleIssueUpdatedBroadcast(payload: { issue: any; oldValue: any; newValue: any }) {
+  handleIssueUpdatedBroadcast(payload: {
+    issue: any;
+    oldValue: any;
+    newValue: any;
+  }) {
     const { issue, oldValue, newValue } = payload;
     this.server.to(`project:${issue.projectId}`).emit('issue_updated', {
       id: issue.id,
@@ -172,7 +168,9 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
   @OnEvent('sprint.started')
   handleSprintStartedBroadcast(payload: { sprint: any }) {
     const { sprint } = payload;
-    this.server.to(`project:${sprint.projectId}`).emit('sprint_started', sprint);
+    this.server
+      .to(`project:${sprint.projectId}`)
+      .emit('sprint_started', sprint);
   }
 
   @OnEvent('sprint.completed')
@@ -185,7 +183,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
     });
   }
 
-  // Helper to compile active viewers in room and broadcast
   private broadcastPresence(projectId: string) {
     const usersMap = this.presenceMap.get(projectId);
     const userNames = usersMap ? Array.from(usersMap.values()) : [];

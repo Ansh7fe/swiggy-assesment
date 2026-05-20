@@ -1,8 +1,16 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ProjectsService } from '../projects/projects.service';
 import { WorkflowService } from '../workflow/workflow.service';
-import { CreateIssueDto, UpdateIssueDto, TransitionIssueDto } from './dto/issue.dto';
+import {
+  CreateIssueDto,
+  UpdateIssueDto,
+  TransitionIssueDto,
+} from './dto/issue.dto';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
 @Injectable()
@@ -14,20 +22,17 @@ export class IssuesService {
     private eventEmitter: EventEmitter2,
   ) {}
 
-  /**
-   * Create an Issue within a project. Uses transactional increment for issue number sequence.
-   */
   async create(projectId: string, dto: CreateIssueDto, reporterId: string) {
-    // 1. Verify project exists
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
     });
     if (!project) {
-      throw new NotFoundException(`Project with ID "${projectId}" does not exist.`);
+      throw new NotFoundException(
+        `Project with ID "${projectId}" does not exist.`,
+      );
     }
 
     return this.prisma.$transaction(async (tx) => {
-      // 2. Safe transaction-level increment of project counter
       const updatedProject = await tx.project.update({
         where: { id: projectId },
         data: { issueCounter: { increment: 1 } },
@@ -36,7 +41,6 @@ export class IssuesService {
 
       const issueNumber = updatedProject.issueCounter;
 
-      // 3. Create the issue, defaulting to "TODO" status
       const issue = await tx.issue.create({
         data: {
           projectId,
@@ -44,7 +48,7 @@ export class IssuesService {
           type: dto.type,
           title: dto.title,
           description: dto.description,
-          status: 'TODO', // Seeding default initial state
+          status: 'TODO',
           priority: dto.priority || 'MEDIUM',
           assigneeId: dto.assigneeId || null,
           sprintId: dto.sprintId || null,
@@ -59,7 +63,6 @@ export class IssuesService {
         },
       });
 
-      // 4. Handle Labels
       if (dto.labels && dto.labels.length > 0) {
         await Promise.all(
           dto.labels.map((label) =>
@@ -73,7 +76,6 @@ export class IssuesService {
         );
       }
 
-      // Add reporter as watcher automatically
       await tx.watcher.create({
         data: {
           issueId: issue.id,
@@ -81,7 +83,6 @@ export class IssuesService {
         },
       });
 
-      // 5. Emit creation event
       this.eventEmitter.emit('issue.created', {
         issue,
         actorId: reporterId,
@@ -95,13 +96,9 @@ export class IssuesService {
     });
   }
 
-  /**
-   * Find an issue by UUID or custom project key (e.g., "PROJ-12").
-   */
   async findOne(idOrKey: string) {
     let issue;
 
-    // Check if it matches key format (e.g. "PROJ-1")
     const keyMatch = idOrKey.match(/^([A-Z0-9]+)-(\d+)$/);
 
     if (keyMatch) {
@@ -127,7 +124,6 @@ export class IssuesService {
         },
       });
     } else {
-      // Find by UUID
       issue = await this.prisma.issue.findUnique({
         where: { id: idOrKey },
         include: {
@@ -156,26 +152,27 @@ export class IssuesService {
     };
   }
 
-  /**
-   * Update Issue fields. Enforces Optimistic Locking using the 'version' property.
-   */
   async update(idOrKey: string, dto: UpdateIssueDto, actorId: string) {
-    // 1. Fetch current issue state
     const issueObj = await this.findOne(idOrKey);
-    const { id: issueId, projectId, version: currentVersion, status: currentStatus } = issueObj;
+    const {
+      id: issueId,
+      projectId,
+      version: currentVersion,
+      status: currentStatus,
+    } = issueObj;
 
-    // 2. Validate transition if status is changing
     if (dto.status && dto.status !== currentStatus) {
-      await this.workflowService.validateTransition(projectId, currentStatus, dto.status);
+      await this.workflowService.validateTransition(
+        projectId,
+        currentStatus,
+        dto.status,
+      );
     }
 
-    // 3. Prepare data updates
     const { labels, version: providedVersion, ...scalarFields } = dto;
 
-    // Build fields updates
     const updateData: Record<string, any> = { ...scalarFields };
 
-    // Handle auto assignment if status changes to IN_REVIEW
     if (dto.status && dto.status !== currentStatus) {
       const autoUpdates = await this.workflowService.getAutoActionUpdates(
         projectId,
@@ -186,13 +183,11 @@ export class IssuesService {
       Object.assign(updateData, autoUpdates);
     }
 
-    // Perform DB update inside a transaction to enforce version locking
     const result = await this.prisma.$transaction(async (tx) => {
-      // Execute the update filtering by provided version
       const updateResult = await tx.issue.updateMany({
         where: {
           id: issueId,
-          version: providedVersion, // Enforce optimistic lock
+          version: providedVersion,
         },
         data: {
           ...updateData,
@@ -206,7 +201,6 @@ export class IssuesService {
         );
       }
 
-      // Handle labels modification if provided
       if (labels !== undefined) {
         await tx.issueLabel.deleteMany({ where: { issueId } });
         if (labels.length > 0) {
@@ -223,7 +217,6 @@ export class IssuesService {
         }
       }
 
-      // Return the newly updated issue
       return tx.issue.findUnique({
         where: { id: issueId },
         include: {
@@ -245,7 +238,6 @@ export class IssuesService {
       labels: result.labels.map((l) => l.label),
     };
 
-    // 4. Emit update event
     this.eventEmitter.emit('issue.updated', {
       issue: updatedIssue,
       oldValue: {
@@ -268,14 +260,9 @@ export class IssuesService {
     return updatedIssue;
   }
 
-  /**
-   * Shortcut dedicated status-only transition API (POST /issues/:id/transitions).
-   * Validates state transition + auto-actions + version concurrency lock.
-   */
   async transition(idOrKey: string, dto: TransitionIssueDto, actorId: string) {
     const issueObj = await this.findOne(idOrKey);
-    
-    // Convert to UpdateIssueDto pattern to leverage full validation
+
     const updateDto: UpdateIssueDto = {
       status: dto.status,
       version: dto.version,

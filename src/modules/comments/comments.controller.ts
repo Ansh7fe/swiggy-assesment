@@ -1,5 +1,10 @@
 import { Controller, Post, Get, Body, Param } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { CommentsService } from './comments.service';
 import { CreateCommentDto } from './dto/comment.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -23,7 +28,9 @@ export class CommentsController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Get list of flat comments for an issue, sorted newest first' })
+  @ApiOperation({
+    summary: 'Get list of flat comments for an issue, sorted newest first',
+  })
   @ApiResponse({ status: 200, description: 'Comments retrieved.' })
   @ApiResponse({ status: 404, description: 'Issue not found.' })
   findIssueComments(@Param('issueId') issueId: string) {

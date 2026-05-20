@@ -1,5 +1,10 @@
 import { Controller, Post, Delete, Body, Param } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { FieldsService } from './fields.service';
 import { CreateCustomFieldDto, SetCustomFieldValueDto } from './dto/fields.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -11,9 +16,17 @@ export class FieldsController {
   constructor(private fieldsService: FieldsService) {}
 
   @Post('projects/:projectId/custom-fields')
-  @ApiOperation({ summary: 'Define a custom field (TEXT or DROPDOWN) for a project' })
-  @ApiResponse({ status: 201, description: 'Custom field registered successfully.' })
-  @ApiResponse({ status: 400, description: 'Validation errors (e.g. missing dropdown options).' })
+  @ApiOperation({
+    summary: 'Define a custom field (TEXT or DROPDOWN) for a project',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Custom field registered successfully.',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Validation errors (e.g. missing dropdown options).',
+  })
   createCustomField(
     @Param('projectId') projectId: string,
     @Body() dto: CreateCustomFieldDto,
@@ -23,8 +36,14 @@ export class FieldsController {
 
   @Post('issues/:issueId/custom-fields')
   @ApiOperation({ summary: 'Record/update custom field value on an issue' })
-  @ApiResponse({ status: 201, description: 'Field value successfully updated.' })
-  @ApiResponse({ status: 400, description: 'Validation errors (e.g. value not in dropdown config).' })
+  @ApiResponse({
+    status: 201,
+    description: 'Field value successfully updated.',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Validation errors (e.g. value not in dropdown config).',
+  })
   setCustomFieldValue(
     @Param('issueId') issueId: string,
     @Body() dto: SetCustomFieldValueDto,

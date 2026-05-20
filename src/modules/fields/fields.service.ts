@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateCustomFieldDto, SetCustomFieldValueDto } from './dto/fields.dto';
 
@@ -6,9 +10,6 @@ import { CreateCustomFieldDto, SetCustomFieldValueDto } from './dto/fields.dto';
 export class FieldsService {
   constructor(private prisma: PrismaService) {}
 
-  /**
-   * Create a custom field definition for a project (TEXT/DROPDOWN).
-   */
   async createCustomField(projectId: string, dto: CreateCustomFieldDto) {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
@@ -18,7 +19,9 @@ export class FieldsService {
     }
 
     if (dto.type === 'DROPDOWN' && (!dto.config || dto.config.length === 0)) {
-      throw new BadRequestException('Dropdown fields must configure a list of options in "config".');
+      throw new BadRequestException(
+        'Dropdown fields must configure a list of options in "config".',
+      );
     }
 
     const configJson = dto.config ? JSON.stringify(dto.config) : '[]';
@@ -33,9 +36,6 @@ export class FieldsService {
     });
   }
 
-  /**
-   * Set custom field value on an issue. Asserts that the field belongs to the project and validates dropdown constraints.
-   */
   async setCustomFieldValue(issueId: string, dto: SetCustomFieldValueDto) {
     const issue = await this.prisma.issue.findUnique({
       where: { id: issueId },
@@ -48,14 +48,17 @@ export class FieldsService {
       where: { id: dto.fieldId },
     });
     if (!field) {
-      throw new NotFoundException(`Custom Field "${dto.fieldId}" does not exist.`);
+      throw new NotFoundException(
+        `Custom Field "${dto.fieldId}" does not exist.`,
+      );
     }
 
     if (field.projectId !== issue.projectId) {
-      throw new BadRequestException('Custom Field must belong to the same project as the issue.');
+      throw new BadRequestException(
+        'Custom Field must belong to the same project as the issue.',
+      );
     }
 
-    // Dropdown choice assertion
     if (field.type === 'DROPDOWN') {
       const allowed: string[] = JSON.parse(field.config as string);
       if (!allowed.includes(dto.value)) {
@@ -83,9 +86,6 @@ export class FieldsService {
     });
   }
 
-  /**
-   * Subscribe a user as a watcher on an issue.
-   */
   async addWatcher(issueId: string, userId: string) {
     const issue = await this.prisma.issue.findUnique({
       where: { id: issueId },
@@ -109,9 +109,6 @@ export class FieldsService {
     });
   }
 
-  /**
-   * Unsubscribe a user from watching an issue.
-   */
   async removeWatcher(issueId: string, userId: string) {
     const watcher = await this.prisma.watcher.findUnique({
       where: {

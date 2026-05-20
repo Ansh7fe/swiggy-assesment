@@ -6,10 +6,6 @@ import { Prisma } from '@prisma/client';
 export class SearchService {
   constructor(private prisma: PrismaService) {}
 
-  /**
-   * Safe SQL-Injection-Proof Full Text Search using GIN index + plainto_tsquery
-   * with structured filters and cursor pagination.
-   */
   async searchIssues(params: {
     q?: string;
     projectId?: string;
@@ -17,17 +13,17 @@ export class SearchService {
     assigneeId?: string;
     priority?: string;
     limit?: number;
-    cursor?: string; // Expecting timestamp of the last issue seen
+    cursor?: string;
   }) {
     const limit = params.limit || 20;
     const conditions: Prisma.Sql[] = [];
 
-    // 1. Full-Text Search Match
     if (params.q && params.q.trim().length > 0) {
-      conditions.push(Prisma.sql`to_tsvector('english', coalesce(i.title, '') || ' ' || coalesce(i.description, '')) @@ plainto_tsquery('english', ${params.q})`);
+      conditions.push(
+        Prisma.sql`to_tsvector('english', coalesce(i.title, '') || ' ' || coalesce(i.description, '')) @@ plainto_tsquery('english', ${params.q})`,
+      );
     }
 
-    // 2. Structured Filters
     if (params.projectId) {
       conditions.push(Prisma.sql`i."projectId" = ${params.projectId}`);
     }
@@ -41,7 +37,6 @@ export class SearchService {
       conditions.push(Prisma.sql`i.priority::text = ${params.priority}`);
     }
 
-    // 3. Cursor Pagination
     if (params.cursor) {
       const cursorDate = new Date(params.cursor);
       if (!isNaN(cursorDate.getTime())) {
@@ -49,12 +44,11 @@ export class SearchService {
       }
     }
 
-    // Combine conditions
-    const whereClause = conditions.length > 0
-      ? Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}`
-      : Prisma.empty;
+    const whereClause =
+      conditions.length > 0
+        ? Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}`
+        : Prisma.empty;
 
-    // Execute safe dynamic SQL query
     const issues = await this.prisma.$queryRaw<any[]>`
       SELECT 
         i.id, 
@@ -80,16 +74,15 @@ export class SearchService {
       LIMIT ${limit}
     `;
 
-    // Format output keys (e.g. PROJ-1)
     const formattedIssues = issues.map((issue) => ({
       ...issue,
       key: `${issue.projectKey}-${issue.issueNumber}`,
     }));
 
-    // Determine the next cursor
-    const nextCursor = formattedIssues.length === limit
-      ? formattedIssues[formattedIssues.length - 1].createdAt
-      : null;
+    const nextCursor =
+      formattedIssues.length === limit
+        ? formattedIssues[formattedIssues.length - 1].createdAt
+        : null;
 
     return {
       issues: formattedIssues,

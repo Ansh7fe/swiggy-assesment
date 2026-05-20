@@ -21,9 +21,6 @@ export class ActivityService {
 
   constructor(private prisma: PrismaService) {}
 
-  /**
-   * Listen to issue creation event and record it.
-   */
   @OnEvent('issue.created')
   async handleIssueCreated(payload: IssueEventPayload) {
     try {
@@ -44,17 +41,17 @@ export class ActivityService {
       });
       this.logger.log(`Logged ISSUE_CREATED for issue ${payload.issue.id}`);
     } catch (error: any) {
-      this.logger.error(`Failed to log issue creation activity: ${error.message}`);
+      this.logger.error(
+        `Failed to log issue creation activity: ${error.message}`,
+      );
     }
   }
 
-  /**
-   * Listen to issue update event and record it.
-   */
   @OnEvent('issue.updated')
   async handleIssueUpdated(payload: IssueEventPayload) {
     try {
-      const isStatusChange = payload.oldValue?.status !== payload.newValue?.status;
+      const isStatusChange =
+        payload.oldValue?.status !== payload.newValue?.status;
       const action = isStatusChange ? 'ISSUE_STATUS_CHANGED' : 'ISSUE_UPDATED';
 
       await this.prisma.activityLog.create({
@@ -71,13 +68,12 @@ export class ActivityService {
       });
       this.logger.log(`Logged ${action} for issue ${payload.issue.id}`);
     } catch (error: any) {
-      this.logger.error(`Failed to log issue update activity: ${error.message}`);
+      this.logger.error(
+        `Failed to log issue update activity: ${error.message}`,
+      );
     }
   }
 
-  /**
-   * Listen to comment addition event and record it.
-   */
   @OnEvent('comment.added')
   async handleCommentAdded(payload: CommentEventPayload) {
     try {
@@ -95,13 +91,12 @@ export class ActivityService {
       });
       this.logger.log(`Logged COMMENT_ADDED for issue ${payload.issue.id}`);
     } catch (error: any) {
-      this.logger.error(`Failed to log comment addition activity: ${error.message}`);
+      this.logger.error(
+        `Failed to log comment addition activity: ${error.message}`,
+      );
     }
   }
 
-  /**
-   * Fetch activity logs for a specific project.
-   */
   async findProjectActivity(projectId: string, limit = 50, cursor?: string) {
     return this.prisma.activityLog.findMany({
       where: { projectId },
