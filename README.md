@@ -485,7 +485,7 @@ If this were a production system at scale, the next engineering investments woul
 
 ## 🎥 Video Walkthrough
 
-[▶️ Watch Demo Walkthrough](https://drive.google.com/file/d/1dc1sXmeVEaabpjfTv6RaF4eVWVouJIZG/view?usp=drivesdk)
+[▶️ Watch Demo Walkthrough](https://drive.google.com/file/d/1LTcCVMMlOz7Dq8KUB_m5kSy2DIym1MYQ/view?usp=drivesdk)
 
 > **Note:** Due to time constraints of the 24-hour deadline, this walkthrough is a quick 
 > screen recording covering the core flows — workflow validation, optimistic locking, 
